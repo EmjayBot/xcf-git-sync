@@ -37,19 +37,22 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install GIMP 3 (Flatpak, official builds)
+        # NOTE: the Flatpak ships no gimp-console binary, so we drive the
+        # GUI binary headless with --no-interface (xcf-git-sync picks that
+        # flag automatically for non-2.10 builds).
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q flatpak
           sudo flatpak remote-add --if-not-exists flathub \
             https://flathub.org/repo/flathub.flatpakrepo
           sudo flatpak install -y flathub org.gimp.GIMP
-          for c in gimp-console-3.2 gimp-console-3.0 gimp-console-3 gimp-console; do
-            if flatpak run --command="$c" org.gimp.GIMP --version >/dev/null 2>&1; then
-              echo "GIMP_BIN=flatpak run --command=$c org.gimp.GIMP" >> "$GITHUB_ENV"
-              break
-            fi
-          done
-          test -n "$GIMP_BIN" || { echo "no gimp-console in flatpak"; exit 1; }
+          if flatpak run org.gimp.GIMP --no-interface --version >/dev/null 2>&1; then
+            echo "GIMP_BIN=flatpak run org.gimp.GIMP" >> "$GITHUB_ENV"
+          else
+            echo "headless flatpak GIMP failed; trying xvfb"
+            sudo apt-get install -y -q xvfb
+            echo "GIMP_BIN=xvfb-run -a flatpak run org.gimp.GIMP" >> "$GITHUB_ENV"
+          fi
           echo "Using: $GIMP_BIN"
 
       - uses: actions/setup-python@v5
