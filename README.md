@@ -45,11 +45,16 @@ See `config.example.yaml` for all options. Copy it to `config.yaml` and edit.
 The tool reads the XCF header (`gimp xcf v011` vs `v012`):
 
 - v011 and earlier → parsed directly with `gimpformats` (fast, no GIMP needed)
-- v012+ (GIMP 3) → needs GIMP installed; you get a clear error telling you
-  what to install. Headless batch export is scaffolded in `src/xcf_git_sync/xcf.py`
-  (`export_via_gimp_batch`) and is the next milestone.
+- v012+ (GIMP 3) → exported via headless GIMP
+  (`gimp --no-interface --batch-interpreter=python-fu-eval`), which works
+  with GIMP 2.10+ and GIMP 3. GIMP must be installed (Windows: the default
+  `C:\Program Files\GIMP *` location is auto-detected).
 
-Workaround today: in GIMP 3, save a copy as GIMP 2.10 XCF for auto-export.
+Force the GIMP path for any file (e.g. to test it) with `--via-gimp`:
+
+```bash
+xcf-git-sync --xcf design.xcf --repo . --once --via-gimp
+```
 
 ## Legacy scripts
 

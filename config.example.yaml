@@ -8,6 +8,8 @@ watch:
   auto_push: true        # same as push
   only_visible: true
   debounce: 1.5
+  # via_gimp: false       # true = always export via headless GIMP
+                          # (required for GIMP 3 files; auto-detected anyway)
 
   # Layer filters (all optional, combine freely)
   tag_prefix: "[GH]"    # only layers starting with [GH]

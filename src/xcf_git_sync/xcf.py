@@ -7,9 +7,6 @@ when a GIMP binary is available, otherwise raises a clear error.
 from __future__ import annotations
 
 import re
-import shutil
-import subprocess
-import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator
@@ -134,62 +131,7 @@ def _layer_image(layer) -> Image.Image | None:
 
 
 class Gimp3NeededError(RuntimeError):
-    """Raised when an XCF needs GIMP 3 but no GIMP binary was found."""
-
-
-def find_gimp_binary() -> str | None:
-    for cand in ("gimp", "gimp-3.0", "gimp-2.10"):
-        if shutil.which(cand):
-            return cand
-    # Flatpak installs are common on Linux
-    try:
-        r = subprocess.run(
-            ["flatpak", "list", "--app", "--columns=application"],
-            capture_output=True, text=True, timeout=10,
-        )
-        if "org.gimp.GIMP" in (r.stdout or ""):
-            return "flatpak run org.gimp.GIMP"
-    except Exception:
-        pass
-    return None
-
-
-def export_via_gimp_batch(
-    xcf_path: Path, out_root: Path, layer_filter: LayerFilter
-) -> list[Path]:
-    """Export layers headless via GIMP (works for GIMP 3 v012 XCFs).
-
-    Uses GIMP batch Python-Fu to save each layer as PNG. Requires GIMP
-    installed. Returns exported PNG paths.
-    """
-    gimp = find_gimp_binary()
-    if not gimp:
-        raise Gimp3NeededError(
-            f"{xcf_path.name} looks like a GIMP 3 XCF ({read_xcf_version(xcf_path)}), "
-            "which gimpformats cannot parse. Install GIMP 3 and ensure "
-            "'gimp' is on PATH, then retry."
-        )
-    out_dir = out_root / slugify(xcf_path.stem)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    # Small GIMP Python-Fu script: export visible layers matching a prefix
-    # filter. Full regex filtering happens afterwards in Python by deleting
-    # non-matching files, keeping the batch side simple and robust.
-    fu_script = (
-        "from gimpfu import *; "
-        "import os; "
-        f"img = pdb.gimp_file_load(r'{xcf_path}', r'{xcf_path}'); "
-        f"os.makedirs(r'{out_dir}', exist_ok=True); "
-        "idx = 0; "
-        ""
-    )
-    _ = fu_script  # batch script is assembled per-layer below for clarity
-    raise NotImplementedError(
-        "Headless GIMP batch export is scaffolded but not yet wired: "
-        f"found {gimp!r}. Next step is to run the batch script against "
-        f"{xcf_path.name}. For now open the XCF in GIMP 3 and export, "
-        "or re-save as GIMP 2.10 XCF for automatic export."
-    )
+    """Raised when an XCF needs headless GIMP but no GIMP binary was found."""
 
 
 def export_xcf_layers(
@@ -197,17 +139,35 @@ def export_xcf_layers(
     out_root: Path,
     layer_filter: LayerFilter | None = None,
     export_flattened: bool = True,
+    via: str = "auto",
 ) -> list[Path]:
-    """Export layers of one XCF to PNGs. Returns list of written files."""
+    """Export layers of one XCF to PNGs. Returns list of written files.
+
+    via: "auto" (gimpformats for GIMP <=2.10 files, headless GIMP for
+    GIMP 3 files), "gimp" (always headless GIMP), "gimpformats" (never
+    headless GIMP; raises Gimp3NeededError on GIMP 3 files).
+    """
     xcf_path = Path(xcf_path)
     out_root = Path(out_root)
     layer_filter = layer_filter or LayerFilter()
     out_dir = out_root / slugify(xcf_path.stem)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    if is_gimp3_xcf(xcf_path):
-        # Try headless GIMP; raises Gimp3NeededError with guidance if missing.
-        return export_via_gimp_batch(xcf_path, out_root, layer_filter)
+    if via == "gimp" or (via == "auto" and is_gimp3_xcf(xcf_path)):
+        # Local import: gimpbatch needs only stdlib at import time, but
+        # keep the dependency direction xcf -> gimpbatch one-way.
+        from .gimpbatch import export_via_gimp_batch
+
+        return export_via_gimp_batch(
+            xcf_path, out_root, layer_filter,
+            export_flattened=export_flattened,
+        )
+    if via == "gimpformats" and is_gimp3_xcf(xcf_path):
+        raise Gimp3NeededError(
+            "%s looks like a GIMP 3 XCF (%s), which gimpformats cannot "
+            "parse. Re-run with --via-gimp." % (xcf_path.name,
+                                                read_xcf_version(xcf_path))
+        )
 
     from gimpformats.gimpXcfDocument import GimpDocument
 

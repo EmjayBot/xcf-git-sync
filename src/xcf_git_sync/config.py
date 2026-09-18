@@ -21,6 +21,7 @@ class AppConfig:
     exclude_regex: list[str] = field(default_factory=list)
     group: list[str] = field(default_factory=list)
     debounce: float = 1.5
+    via_gimp: bool = False
 
 
 def _split_csv(value: object) -> list[str]:
@@ -51,7 +52,7 @@ def load_config(path: str | Path | None) -> AppConfig:
     ):
         if watch.get(key) is not None:
             setattr(cfg, key, str(watch.get(key)))
-    for key in ("push", "no_flatten", "only_visible"):
+    for key in ("push", "no_flatten", "only_visible", "via_gimp"):
         if watch.get(key) is not None:
             setattr(cfg, key, bool(watch.get(key)))
     if watch.get("auto_push") is not None and "push" not in watch:
@@ -68,10 +69,10 @@ def apply_cli_overrides(cfg: AppConfig, args) -> AppConfig:
     """CLI args win over config file. `args` is the argparse namespace."""
     for key in (
         "xcf", "watch_dir", "repo", "out", "tag_prefix",
-        "push", "no_flatten", "only_visible", "debounce",
+        "push", "no_flatten", "only_visible", "via_gimp", "debounce",
     ):
         val = getattr(args, key, None)
-        if val is not None and val is not False or key in ("push", "no_flatten", "only_visible") and val:
+        if val is not None and val is not False or key in ("push", "no_flatten", "only_visible", "via_gimp") and val:
             # booleans: only override when the flag was actually passed
             setattr(cfg, key, val)
     # Fix-up: argparse gives None when flag absent for store_true with

@@ -49,6 +49,7 @@ class XcfHandler(FileSystemEventHandler):
             exported = export_xcf_layers(
                 p, self.out_root, build_filter(self.cfg),
                 export_flattened=not self.cfg.no_flatten,
+                via="gimp" if self.cfg.via_gimp else "auto",
             )
             commit_and_push(self.repo, exported, p, push=self.cfg.push)
         except Gimp3NeededError as e:
@@ -81,6 +82,9 @@ def parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--exclude-regex", type=str, default=None)
     ap.add_argument("--group", type=str, default=None)
     ap.add_argument("--debounce", type=float, default=None)
+    ap.add_argument("--via-gimp", action="store_true", default=None,
+                    help="Export via headless GIMP instead of gimpformats "
+                         "(needed for GIMP 3 XCFs, useful for testing)")
     ap.add_argument("--once", action="store_true", help="Export once, don't watch")
     return ap.parse_args(argv)
 
@@ -127,6 +131,7 @@ def main(argv=None) -> int:
         try:
             exported = export_xcf_layers(
                 x, out_root, layer_filter, export_flattened=not cfg.no_flatten,
+                via="gimp" if cfg.via_gimp else "auto",
             )
             commit_and_push(repo_path, exported, x, push=cfg.push)
         except Gimp3NeededError as e:
