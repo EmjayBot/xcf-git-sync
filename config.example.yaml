@@ -1,0 +1,22 @@
+# xcf-git-sync config (use with: xcf-git-sync --config config.yaml --push)
+watch:
+  # Exactly one of xcf / watch_dir is required (CLI flags override this file)
+  xcf: ./design.xcf
+  # watch_dir: ./art
+  repo: ./
+  out: ./assets/xcf_layers
+  auto_push: true        # same as push
+  only_visible: true
+  debounce: 1.5
+
+  # Layer filters (all optional, combine freely)
+  tag_prefix: "[GH]"    # only layers starting with [GH]
+  # include: "Hero,Logo"          # substring match
+  # include_regex: ".*_export$"   # regex match
+  # exclude: "Sketch,WIP"
+  # exclude_regex: "^temp"
+  # group: "Sprites,UI"           # only inside these groups
+
+github:
+  branch: main
+  lfs: true   # tip: track PNGs with `git lfs track "*.png"`

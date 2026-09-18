@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xcf-git-sync"
+version = "0.1.0"
+description = "Watch GIMP XCF files, export layers to PNG, and auto-commit/push to git."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [{ name = "xcf-git-sync contributors" }]
+keywords = ["gimp", "xcf", "git", "game-art", "automation"]
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Multimedia :: Graphics",
+]
+dependencies = [
+  "gimpformats>=2025",
+  "watchdog>=4.0.0",
+  "Pillow>=10.0.0",
+  "GitPython>=3.1.40",
+  "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+xcf-git-sync = "xcf_git_sync.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

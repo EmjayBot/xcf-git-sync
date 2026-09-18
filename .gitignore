@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+dist/
+build/
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+assets/xcf_layers/
+*.xcf
+!tests/
