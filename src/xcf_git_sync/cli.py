@@ -51,6 +51,7 @@ class XcfHandler(FileSystemEventHandler):
                 export_flattened=not self.cfg.no_flatten,
                 via="gimp" if self.cfg.via_gimp else "auto",
                 timeout=self.cfg.timeout,
+                gimp_bin=self.cfg.gimp_bin or None,
             )
             commit_and_push(self.repo, exported, p, push=self.cfg.push)
         except Gimp3NeededError as e:
@@ -90,6 +91,9 @@ def parse_args(argv=None) -> argparse.Namespace:
                     help="Print the XCF layer tree (via headless GIMP) and exit")
     ap.add_argument("--timeout", type=float, default=None,
                     help="Headless GIMP timeout in seconds (default 300)")
+    ap.add_argument("--gimp-bin", type=str, default=None,
+                    help="GIMP binary/command override (e.g. flatpak command)."
+                         " Env XCF_GIT_SYNC_GIMP_BIN works too.")
     ap.add_argument("--once", action="store_true", help="Export once, don't watch")
     return ap.parse_args(argv)
 
@@ -133,7 +137,8 @@ def main(argv=None) -> int:
                       % len(found))
                 return 2
             t = found[0]
-        layers = _list_layers(t.resolve(), timeout=cfg.timeout)
+        layers = _list_layers(t.resolve(), timeout=cfg.timeout,
+                              gimp_bin=cfg.gimp_bin or None)
         for group_path, name, visible in layers:
             mark = "" if visible else " (hidden)"
             full = "/".join(group_path + [name])
@@ -162,6 +167,7 @@ def main(argv=None) -> int:
                 x, out_root, layer_filter, export_flattened=not cfg.no_flatten,
                 via="gimp" if cfg.via_gimp else "auto",
                 timeout=cfg.timeout,
+                gimp_bin=cfg.gimp_bin or None,
             )
             commit_and_push(repo_path, exported, x, push=cfg.push)
         except Gimp3NeededError as e:

@@ -1,0 +1,78 @@
+# Example: auto-sync XCF layers in the cloud (copy to YOUR art repo as
+# .github/workflows/xcf-sync.yaml and adjust XCF_PATH / FILTERS).
+#
+# How it works: any push that touches the XCF spins up a runner, installs
+# headless GIMP 3 (official Flatpak), exports the filtered layers with
+# xcf-git-sync, and commits the PNGs back. The `paths:` guard means the
+# PNG commit itself never retriggers the workflow (no loops).
+#
+# This is a safety net, not a replacement for the local watcher:
+# artists editing in GIMP get instant sync from `xcf-git-sync --push`,
+# and this catches XCFs pushed any other way (web upload, merge, etc.).
+
+name: xcf-sync
+on:
+  push:
+    branches: [main]
+    paths:
+      - "maps/source/urth.xcf"   # <-- your XCF path(s)
+  workflow_dispatch:              # manual "Run workflow" button
+
+permissions:
+  contents: write
+
+concurrency:
+  group: xcf-sync-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      XCF_PATH: maps/source/urth.xcf
+      FILTERS: "National,Cities,Sub-National,Political,Ocean"
+      OUT_DIR: assets/xcf_layers
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GIMP 3 (Flatpak, official builds)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q flatpak
+          sudo flatpak remote-add --if-not-exists flathub \
+            https://flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak install -y flathub org.gimp.GIMP
+          for c in gimp-console-3.2 gimp-console-3.0 gimp-console-3 gimp-console; do
+            if flatpak run --command="$c" org.gimp.GIMP --version >/dev/null 2>&1; then
+              echo "GIMP_BIN=flatpak run --command=$c org.gimp.GIMP" >> "$GITHUB_ENV"
+              break
+            fi
+          done
+          test -n "$GIMP_BIN" || { echo "no gimp-console in flatpak"; exit 1; }
+          echo "Using: $GIMP_BIN"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install xcf-git-sync
+        run: pip install "git+https://github.com/EmjayBot/xcf-git-sync.git"
+
+      - name: Export layers
+        run: >
+          xcf-git-sync
+          --xcf "$XCF_PATH" --repo . --out "$OUT_DIR" --once
+          --include "$FILTERS"
+          --gimp-bin "$GIMP_BIN"
+          --timeout 600
+
+      - name: Commit PNGs back
+        run: |
+          git config user.name "xcf-sync-bot"
+          git config user.email "xcf-sync-bot@users.noreply.github.com"
+          git add "$OUT_DIR"
+          git diff --cached --quiet && echo "No layer changes." || {
+            git commit -m "auto: sync layers from $XCF_PATH"
+            git push
+          }

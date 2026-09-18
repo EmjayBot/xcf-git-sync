@@ -24,6 +24,7 @@ class AppConfig:
     via_gimp: bool = False
     timeout: float = 300
     list_layers: bool = False
+    gimp_bin: str = ""
 
 
 def _split_csv(value: object) -> list[str]:
@@ -50,7 +51,7 @@ def load_config(path: str | Path | None) -> AppConfig:
     github = data.get("github", {}) if isinstance(data, dict) else {}
     _ = github  # reserved for branch/lfs settings
     for key in (
-        "xcf", "watch_dir", "repo", "out", "tag_prefix",
+        "xcf", "watch_dir", "repo", "out", "tag_prefix", "gimp_bin",
     ):
         if watch.get(key) is not None:
             setattr(cfg, key, str(watch.get(key)))
@@ -73,7 +74,7 @@ def load_config(path: str | Path | None) -> AppConfig:
 def apply_cli_overrides(cfg: AppConfig, args) -> AppConfig:
     """CLI args win over config file. `args` is the argparse namespace."""
     for key in (
-        "xcf", "watch_dir", "repo", "out", "tag_prefix",
+        "xcf", "watch_dir", "repo", "out", "tag_prefix", "gimp_bin",
         "push", "no_flatten", "only_visible", "via_gimp", "list_layers",
         "debounce", "timeout",
     ):

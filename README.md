@@ -66,6 +66,26 @@ xcf-git-sync --xcf maps/source/urth.xcf --repo . --list-layers \
   --include "National,Cities,Sub-National,Political,Ocean"
 ```
 
+## Cloud auto-sync (GitHub Actions)
+
+The local watcher is instant, but layers only sync while someone runs it.
+As a safety net, run the export in CI: any push touching the XCF
+regenerates the PNGs and commits them back.
+
+1. Copy `examples/urthmaps-sync.yaml` into your art repo as
+   `.github/workflows/xcf-sync.yaml`.
+2. Adjust `XCF_PATH`, `FILTERS`, and branch names at the top.
+3. Push an XCF change — the PNGs update themselves a few minutes later.
+
+It installs headless GIMP 3 from the official Flatpak, so even GIMP 3
+XCFs work. The `paths:` trigger means the bot's own PNG commit never
+re-triggers the workflow (no loops). Free on public repos.
+
+> Why not Cloudflare? Workers can't run GIMP — no custom native
+> binaries, tight CPU/memory limits, no GTK stack. The compute has
+> to live where GIMP can run (GitHub runners, a VM, or a container);
+> Cloudflare could front a status page, but it adds nothing here.
+
 ## Legacy scripts
 
 `legacy/xcf_git_sync.py` and `legacy/xcf_git_sync_selective.py` are the original prototypes

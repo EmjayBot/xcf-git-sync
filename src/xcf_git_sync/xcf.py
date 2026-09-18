@@ -141,6 +141,7 @@ def export_xcf_layers(
     export_flattened: bool = True,
     via: str = "auto",
     timeout: int = 300,
+    gimp_bin: str | None = None,
 ) -> list[Path]:
     """Export layers of one XCF to PNGs. Returns list of written files.
 
@@ -162,6 +163,7 @@ def export_xcf_layers(
         return export_via_gimp_batch(
             xcf_path, out_root, layer_filter,
             export_flattened=export_flattened, timeout=timeout,
+            gimp_bin=gimp_bin,
         )
     if via == "gimpformats" and is_gimp3_xcf(xcf_path):
         raise Gimp3NeededError(

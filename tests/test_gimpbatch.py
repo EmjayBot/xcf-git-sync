@@ -109,6 +109,29 @@ def test_build_command_variants():
     assert any("XCF_GIT_SYNC_FU" in a for a in c3)
 
 
+def test_split_gimp_command():
+    from xcf_git_sync.gimpbatch import effective_gimp_bin, split_gimp_command
+
+    assert split_gimp_command("gimp-3.0") == ["gimp-3.0"]
+    flat = "flatpak run --command=gimp-console-3.2 org.gimp.GIMP"
+    assert split_gimp_command(flat) == flat.split(" ")
+    assert split_gimp_command("") == []
+    c = build_command(flat)
+    assert c[:4] == flat.split(" ") and "--no-interface" in c
+    assert effective_gimp_bin("custom") == "custom"
+
+
+def test_effective_gimp_bin_env(monkeypatch):
+    from xcf_git_sync.gimpbatch import effective_gimp_bin
+
+    monkeypatch.setenv("XCF_GIT_SYNC_GIMP_BIN", "my-gimp --fast")
+    assert effective_gimp_bin() == "my-gimp --fast"
+    monkeypatch.delenv("XCF_GIT_SYNC_GIMP_BIN")
+    monkeypatch.setattr(
+        gimpbatch, "find_gimp_binary", lambda: "auto-gimp")
+    assert effective_gimp_bin() == "auto-gimp"
+
+
 def test_find_gimp_binary_uses_path(monkeypatch):
     monkeypatch.setattr(
         gimpbatch.shutil, "which", lambda name: "/usr/bin/" + name

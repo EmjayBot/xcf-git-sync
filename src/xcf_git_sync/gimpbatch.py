@@ -20,7 +20,15 @@ from .xcf import Gimp3NeededError, LayerFilter, read_xcf_version, slugify
 
 JOB_ENV = "XCF_GIT_SYNC_JOB"
 FU_ENV = "XCF_GIT_SYNC_FU"
+BIN_ENV = "XCF_GIT_SYNC_GIMP_BIN"
 DEFAULT_TIMEOUT = 300
+
+FLATPAK_CONSOLE_COMMANDS = (
+    "gimp-console-3.2",
+    "gimp-console-3.0",
+    "gimp-console-3",
+    "gimp-console",
+)
 
 
 def _windows_candidates() -> list[str]:
@@ -64,21 +72,65 @@ def find_gimp_binary() -> str | None:
     for cand in _windows_candidates():
         if os.path.exists(cand):
             return cand
-    # Flatpak installs are common on Linux
+    # Flatpak installs are common on Linux. Prefer a console command
+    # (headless-safe); fall back to the GUI binary.
     try:
         r = subprocess.run(
             ["flatpak", "list", "--app", "--columns=application"],
             capture_output=True, text=True, timeout=10,
         )
         if "org.gimp.GIMP" in (r.stdout or ""):
+            for cmd in FLATPAK_CONSOLE_COMMANDS:
+                try:
+                    t = subprocess.run(
+                        ["flatpak", "run", "--command=" + cmd,
+                         "org.gimp.GIMP", "--version"],
+                        capture_output=True, text=True, timeout=60,
+                    )
+                    if t.returncode == 0:
+                        return "flatpak run --command=%s org.gimp.GIMP" % cmd
+                except Exception:
+                    continue
             return "flatpak run org.gimp.GIMP"
     except Exception:
         pass
     return None
 
 
+def split_gimp_command(gimp_bin: str) -> list[str]:
+    """Split a configured GIMP command into argv parts.
+
+    Plain paths pass through; compound commands (e.g. flatpak) are split
+    on whitespace (quoting respected on POSIX).
+    """
+    import shlex
+
+    gimp_bin = (gimp_bin or "").strip()
+    if not gimp_bin:
+        return []
+    if os.name == "nt" and os.path.exists(gimp_bin):
+        return [gimp_bin]
+    if " " not in gimp_bin and "\t" not in gimp_bin:
+        return [gimp_bin]
+    try:
+        return shlex.split(gimp_bin, posix=(os.name != "nt"))
+    except ValueError:
+        return [gimp_bin]
+
+
+def effective_gimp_bin(explicit: str | None = None) -> str | None:
+    """Explicit --gimp-bin / env override wins, else auto-detect."""
+    if explicit:
+        return explicit
+    env = os.environ.get(BIN_ENV, "").strip()
+    if env:
+        return env
+    return find_gimp_binary()
+
+
 def build_command(gimp_bin: str) -> list[str]:
     """Argv (without the final -b program) for headless python-fu-eval."""
+    parts = split_gimp_command(gimp_bin)
     low = gimp_bin.lower()
     if "2.10" in low or "gimp-2" in low or low.endswith("gimp 2\\bin\\gimp-2.10.exe"):
         iface = ["-i"]
@@ -88,7 +140,7 @@ def build_command(gimp_bin: str) -> list[str]:
         "import os;"
         "exec(open(os.environ['" + FU_ENV + "']).read());"
     )
-    return [gimp_bin] + iface + [
+    return parts + iface + [
         "--batch-interpreter=python-fu-eval",
         "-b", batch_code,
     ]
@@ -145,12 +197,12 @@ def _place(staging_path: str, dest_dir: Path, slug_base: str,
     return fpath
 
 
-def _require_gimp(xcf_path: Path) -> str:
-    gimp_bin = find_gimp_binary()
+def _require_gimp(xcf_path: Path, explicit: str | None = None) -> str:
+    gimp_bin = effective_gimp_bin(explicit)
     if not gimp_bin:
         raise Gimp3NeededError(
             "%s (%s) needs headless GIMP to export, but no GIMP binary was "
-            "found. Install GIMP 2.10+ or GIMP 3, then retry."
+            "found. Install GIMP 2.10+ or GIMP 3, or point --gimp-bin at it."
             % (xcf_path.name, read_xcf_version(xcf_path))
         )
     return gimp_bin
@@ -214,13 +266,14 @@ def export_via_gimp_batch(
     layer_filter: LayerFilter | None = None,
     export_flattened: bool = True,
     timeout: int = DEFAULT_TIMEOUT,
+    gimp_bin: str | None = None,
 ) -> list[Path]:
     """Export one XCF's layers via headless GIMP. Returns written PNGs."""
     xcf_path = Path(xcf_path)
     out_root = Path(out_root)
     layer_filter = layer_filter or LayerFilter()
 
-    gimp_bin = _require_gimp(xcf_path)
+    gimp_bin = _require_gimp(xcf_path, gimp_bin)
 
     out_dir = out_root / slugify(xcf_path.stem)
     out_dir.mkdir(parents=True, exist_ok=True)
