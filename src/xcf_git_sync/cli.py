@@ -50,6 +50,7 @@ class XcfHandler(FileSystemEventHandler):
                 p, self.out_root, build_filter(self.cfg),
                 export_flattened=not self.cfg.no_flatten,
                 via="gimp" if self.cfg.via_gimp else "auto",
+                timeout=self.cfg.timeout,
             )
             commit_and_push(self.repo, exported, p, push=self.cfg.push)
         except Gimp3NeededError as e:
@@ -85,6 +86,10 @@ def parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--via-gimp", action="store_true", default=None,
                     help="Export via headless GIMP instead of gimpformats "
                          "(needed for GIMP 3 XCFs, useful for testing)")
+    ap.add_argument("--list-layers", action="store_true", default=None,
+                    help="Print the XCF layer tree (via headless GIMP) and exit")
+    ap.add_argument("--timeout", type=float, default=None,
+                    help="Headless GIMP timeout in seconds (default 300)")
     ap.add_argument("--once", action="store_true", help="Export once, don't watch")
     return ap.parse_args(argv)
 
@@ -112,6 +117,30 @@ def main(argv=None) -> int:
     out_root = Path(cfg.out).resolve() if cfg.out else repo_path / "assets" / "xcf_layers"
     out_root.mkdir(parents=True, exist_ok=True)
     layer_filter = build_filter(cfg)
+    via = "gimp" if cfg.via_gimp else "auto"
+
+    if cfg.list_layers:
+        from .gimpbatch import list_layers as _list_layers
+        target = cfg.xcf or cfg.watch_dir
+        if not target:
+            print("Need --xcf (or --watch-dir with exactly one XCF) to list")
+            return 2
+        t = Path(target)
+        if t.is_dir():
+            found = sorted(t.rglob("*.xcf"))
+            if len(found) != 1:
+                print("Found %d XCFs; point --xcf at one file to list"
+                      % len(found))
+                return 2
+            t = found[0]
+        layers = _list_layers(t.resolve(), timeout=cfg.timeout)
+        for group_path, name, visible in layers:
+            mark = "" if visible else " (hidden)"
+            full = "/".join(group_path + [name])
+            kept = "  [keep]" if layer_filter.keep(
+                group_path, name, visible) else ""
+            print("%s%s%s" % (full, mark, kept))
+        return 0
 
     targets: list[Path] = []
     watch_path: Path | None = None
@@ -132,6 +161,7 @@ def main(argv=None) -> int:
             exported = export_xcf_layers(
                 x, out_root, layer_filter, export_flattened=not cfg.no_flatten,
                 via="gimp" if cfg.via_gimp else "auto",
+                timeout=cfg.timeout,
             )
             commit_and_push(repo_path, exported, x, push=cfg.push)
         except Gimp3NeededError as e:

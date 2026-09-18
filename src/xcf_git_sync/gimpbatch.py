@@ -26,33 +26,38 @@ DEFAULT_TIMEOUT = 300
 def _windows_candidates() -> list[str]:
     """Well-known GIMP install locations on Windows (newest first)."""
     cands: list[str] = []
-    for root in (
+    roots = [
         os.environ.get("ProgramFiles", r"C:\Program Files"),
         os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
-    ):
+        os.path.join(
+            os.environ.get("LOCALAPPDATA", r"C:\Users\Default\AppData\Local"),
+            "Programs",
+        ),
+    ]
+    for root in roots:
         for pat in ("GIMP 3", "GIMP 2", "GIMP*"):
-            for exe in sorted(
-                glob.glob(os.path.join(root, pat, "bin", "gimp*.exe")),
-                reverse=True,
-            ):
+            for exe in glob.glob(os.path.join(root, pat, "bin", "gimp*.exe")):
                 base = os.path.basename(exe).lower()
-                if base.startswith(("gimp-3", "gimp-2", "gimp")) and base.endswith(".exe"):
-                    if "debug" in base or "tool" in base or "test" in base:
-                        continue
-                    cands.append(exe)
-    # de-dupe, prefer 3.x
-    seen: list[str] = []
-    for c in sorted(cands, reverse=True):
-        if c not in seen:
-            seen.append(c)
-    return seen
+                if not (base.startswith(("gimp-3", "gimp-2", "gimp-console", "gimp"))
+                        and base.endswith(".exe")):
+                    continue
+                if "debug" in base or "tool" in base or "test" in base:
+                    continue
+                cands.append(exe)
+    # Prefer console binaries (no window flash in batch), then newest.
+    def rank(p: str) -> tuple:
+        b = os.path.basename(p).lower()
+        return ("console" in b, b)
+
+    return sorted(set(cands), key=rank, reverse=True)
 
 
 def find_gimp_binary() -> str | None:
     """Return a GIMP binary path, or None if GIMP isn't installed."""
     import shutil as _shutil
 
-    for cand in ("gimp-3.0", "gimp-3", "gimp", "gimp-2.10"):
+    for cand in ("gimp-3.2", "gimp-3.0", "gimp-3", "gimp",
+                 "gimp-console-3.2", "gimp-console-3", "gimp-2.10"):
         found = _shutil.which(cand)
         if found:
             return found
@@ -89,13 +94,16 @@ def build_command(gimp_bin: str) -> list[str]:
     ]
 
 
-def parse_manifest(output: str) -> tuple[list[dict], str | None, str | None]:
-    """Parse GIMP stdout. Returns (exports, flat_path, gimp_version).
+def parse_manifest(output: str):
+    """Parse GIMP stdout.
 
+    Returns (exports, flat_path, gimp_version, layers) where
     exports: [{path, visible(bool), names([group..., name])}]
+    layers: [(group_path, name, visible)] (list mode; else [])
     Unknown lines (startup noise, warnings) are ignored.
     """
     exports: list[dict] = []
+    layers: list[tuple] = []
     flat: str | None = None
     version: str | None = None
     for line in (output or "").splitlines():
@@ -110,13 +118,17 @@ def parse_manifest(output: str) -> tuple[list[dict], str | None, str | None]:
                     "visible": parts[2].strip() == "1",
                     "names": json.loads(parts[3]),
                 })
+            elif kind == "XCFGSYNC-LAYER" and len(parts) == 3:
+                names = json.loads(parts[2])
+                layers.append((names[:-1], names[-1],
+                               parts[1].strip() == "1"))
             elif kind == "XCFGSYNC-FLAT" and len(parts) == 2:
                 flat = parts[1]
             elif kind == "XCFGSYNC-GIMP" and len(parts) == 2:
                 version = parts[1]
         except (ValueError, IndexError):
             continue
-    return exports, flat, version
+    return exports, flat, version, layers
 
 
 def _place(staging_path: str, dest_dir: Path, slug_base: str,
@@ -133,38 +145,26 @@ def _place(staging_path: str, dest_dir: Path, slug_base: str,
     return fpath
 
 
-def export_via_gimp_batch(
-    xcf_path: Path,
-    out_root: Path,
-    layer_filter: LayerFilter | None = None,
-    export_flattened: bool = True,
-    timeout: int = DEFAULT_TIMEOUT,
-) -> list[Path]:
-    """Export one XCF's layers via headless GIMP. Returns written PNGs."""
-    xcf_path = Path(xcf_path)
-    out_root = Path(out_root)
-    layer_filter = layer_filter or LayerFilter()
-
+def _require_gimp(xcf_path: Path) -> str:
     gimp_bin = find_gimp_binary()
     if not gimp_bin:
         raise Gimp3NeededError(
             "%s (%s) needs headless GIMP to export, but no GIMP binary was "
-            "found. Install GIMP 2.10+ (Windows: default installer path is "
-            "fine) or GIMP 3, then retry."
+            "found. Install GIMP 2.10+ or GIMP 3, then retry."
             % (xcf_path.name, read_xcf_version(xcf_path))
         )
+    return gimp_bin
 
-    out_dir = out_root / slugify(xcf_path.stem)
-    out_dir.mkdir(parents=True, exist_ok=True)
+
+def _run_fu_job(xcf_path: Path, job_extra: dict, timeout: int,
+                gimp_bin: str | None = None) -> tuple[str, str]:
+    """Run the Fu script with the given job; return (output, gimp_bin)."""
+    xcf_path = Path(xcf_path)
+    gimp_bin = gimp_bin or _require_gimp(xcf_path)
     tmpdir = Path(tempfile.mkdtemp(prefix="xcfgsync-"))
-    staging = tmpdir / "staging"
-    staging.mkdir()
     try:
-        job = {
-            "xcf": str(xcf_path),
-            "staging": str(staging),
-            "flattened": bool(export_flattened),
-        }
+        job = {"xcf": str(xcf_path)}
+        job.update(job_extra)
         job_path = tmpdir / "job.json"
         fu_path = tmpdir / "export_fu.py"
         job_path.write_text(json.dumps(job), encoding="utf-8")
@@ -180,19 +180,67 @@ def export_via_gimp_batch(
             )
         except subprocess.TimeoutExpired as e:
             raise RuntimeError(
-                "GIMP batch export timed out after %ds for %s "
+                "GIMP batch job timed out after %ds for %s "
                 "(first launch can be slow; retry, it reuses caches)."
                 % (timeout, xcf_path.name)
             ) from e
         output = (proc.stdout or "") + "\n" + (proc.stderr or "")
-        exports, flat, gimp_version = parse_manifest(output)
+        return output, gimp_bin
+    finally:
+        shutil.rmtree(str(tmpdir), ignore_errors=True)
+
+
+def list_layers(xcf_path: Path, timeout: int = DEFAULT_TIMEOUT,
+                gimp_bin: str | None = None):
+    """List (group_path, name, visible) for every layer via headless GIMP."""
+    xcf_path = Path(xcf_path)
+    output, gimp_bin = _run_fu_job(xcf_path, {"mode": "list"},
+                                   timeout, gimp_bin)
+    _exports, _flat, version, layers = parse_manifest(output)
+    if version:
+        print("[gimp] via %s (GIMP %s)" % (gimp_bin, version))
+    if not layers:
+        tail = "\n".join(output.splitlines()[-15:])
+        raise RuntimeError(
+            "GIMP layer listing produced nothing for %s.\n%s"
+            % (xcf_path.name, tail)
+        )
+    return layers
+
+
+def export_via_gimp_batch(
+    xcf_path: Path,
+    out_root: Path,
+    layer_filter: LayerFilter | None = None,
+    export_flattened: bool = True,
+    timeout: int = DEFAULT_TIMEOUT,
+) -> list[Path]:
+    """Export one XCF's layers via headless GIMP. Returns written PNGs."""
+    xcf_path = Path(xcf_path)
+    out_root = Path(out_root)
+    layer_filter = layer_filter or LayerFilter()
+
+    gimp_bin = _require_gimp(xcf_path)
+
+    out_dir = out_root / slugify(xcf_path.stem)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    tmpdir = Path(tempfile.mkdtemp(prefix="xcfgsync-"))
+    staging = tmpdir / "staging"
+    staging.mkdir()
+    try:
+        output, _bin = _run_fu_job(xcf_path, {
+            "mode": "export",
+            "staging": str(staging),
+            "flattened": bool(export_flattened),
+        }, timeout, gimp_bin)
+        exports, flat, gimp_version, _layers = parse_manifest(output)
         if gimp_version:
             print("[gimp] via %s (GIMP %s)" % (gimp_bin, gimp_version))
         if not exports and not flat:
             tail = "\n".join(output.splitlines()[-15:])
             raise RuntimeError(
-                "GIMP batch export produced nothing for %s (exit %s).\n%s"
-                % (xcf_path.name, proc.returncode, tail)
+                "GIMP batch export produced nothing for %s.\n%s"
+                % (xcf_path.name, tail)
             )
 
         exported: list[Path] = []

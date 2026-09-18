@@ -42,18 +42,28 @@ See `config.example.yaml` for all options. Copy it to `config.yaml` and edit.
 
 ## GIMP 3 support
 
-The tool reads the XCF header (`gimp xcf v011` vs `v012`):
+The tool reads the XCF header (`gimp xcf v011` vs `v012+`):
 
 - v011 and earlier → parsed directly with `gimpformats` (fast, no GIMP needed)
-- v012+ (GIMP 3) → exported via headless GIMP
-  (`gimp --no-interface --batch-interpreter=python-fu-eval`), which works
-  with GIMP 2.10+ and GIMP 3. GIMP must be installed (Windows: the default
-  `C:\Program Files\GIMP *` location is auto-detected).
+- v012+ (GIMP 3, e.g. v019) → exported via headless GIMP
+  (`--batch-interpreter=python-fu-eval`), verified on GIMP 3.2.6 and 2.10.32.
+  GIMP is auto-detected (PATH, `C:\Program Files\GIMP *`,
+  `%LOCALAPPDATA%\Programs\GIMP *`, Flatpak).
 
 Force the GIMP path for any file (e.g. to test it) with `--via-gimp`:
 
 ```bash
 xcf-git-sync --xcf design.xcf --repo . --once --via-gimp
+```
+
+## Inspecting layers
+
+Not sure what to filter? Print the layer tree with `[keep]` marks showing
+what your current filters would export:
+
+```bash
+xcf-git-sync --xcf maps/source/urth.xcf --repo . --list-layers \
+  --include "National,Cities,Sub-National,Political,Ocean"
 ```
 
 ## Legacy scripts

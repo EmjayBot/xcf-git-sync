@@ -79,13 +79,26 @@ def test_parse_manifest_ignores_noise():
         "XCFGSYNC-FLAT\t/s/_flattened.png",
         "XCFGSYNC-EXPORT\t/s/c.png\t1\tnot-json{{{",
     ])
-    exports, flat, ver = parse_manifest(out)
+    exports, flat, ver, layers = parse_manifest(out)
     assert ver == "2.10.32"
     assert flat == "/s/_flattened.png"
+    assert layers == []
     assert [(e["path"], e["visible"], e["names"]) for e in exports] == [
         ("/s/a.png", True, ["A B"]),
         ("/s/b.png", False, ["G", "C"]),
     ]
+
+
+def test_parse_manifest_list_mode():
+    out = "\n".join([
+        "XCFGSYNC-GIMP\t3.2.6",
+        "XCFGSYNC-LAYER\t1\t" + json.dumps(["Labels", "National"]),
+        "XCFGSYNC-LAYER\t0\t" + json.dumps(["Hidden"]),
+    ])
+    exports, flat, ver, layers = parse_manifest(out)
+    assert ver == "3.2.6"
+    assert exports == [] and flat is None
+    assert layers == [(["Labels"], "National", True), ([], "Hidden", False)]
 
 
 def test_build_command_variants():
@@ -100,7 +113,7 @@ def test_find_gimp_binary_uses_path(monkeypatch):
     monkeypatch.setattr(
         gimpbatch.shutil, "which", lambda name: "/usr/bin/" + name
     )
-    assert find_gimp_binary() == "/usr/bin/gimp-3.0"
+    assert find_gimp_binary() == "/usr/bin/gimp-3.2"
 
 
 def test_export_e2e_with_filter(monkeypatch, tmp_path, stub_bin):
@@ -168,7 +181,8 @@ def test_fu_source_is_polyglot_safe():
     assert not fstrings, "f-strings are Python 3 only"
     for needed in ("XCF_GIT_SYNC_JOB", "gimp_file_load", "gimp_file_save",
                    "gimp_layer_new_from_drawable", "gimp_layer_set_offsets",
-                   "XCFGSYNC-EXPORT", "gimp_quit"):
+                   "XCFGSYNC-EXPORT", "XCFGSYNC-LAYER", "gimp_quit",
+                   "gi.repository", "merge_visible_layers", "file_load"):
         assert needed in src, needed
     compile(src, "export_fu.py", "exec")  # py3 syntax must hold
 
