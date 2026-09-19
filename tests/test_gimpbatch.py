@@ -165,6 +165,25 @@ def test_export_e2e_dedup_and_groups(monkeypatch, tmp_path, stub_bin):
     assert "design/GH-Hidden.png" in names
 
 
+def test_place_overwrites_previous_run(tmp_path):
+    from xcf_git_sync.gimpbatch import _place
+
+    dest = tmp_path / "out"
+    dest.mkdir()
+    old = dest / "Hero.png"
+    old.write_bytes(b"old")
+    src1 = tmp_path / "s1.png"
+    src1.write_bytes(b"new1")
+    taken: set = set()
+    got = _place(str(src1), dest, "Hero", taken)
+    assert got == old and got.read_bytes() == b"new1"
+    # same-run collision still de-dupes
+    src2 = tmp_path / "s2.png"
+    src2.write_bytes(b"new2")
+    got2 = _place(str(src2), dest, "Hero", taken)
+    assert got2.name == "Hero-2.png" and got2.read_bytes() == b"new2"
+
+
 def test_no_binary_raises(monkeypatch, tmp_path):
     monkeypatch.setattr(gimpbatch, "find_gimp_binary", lambda: None)
     with pytest.raises(Gimp3NeededError):

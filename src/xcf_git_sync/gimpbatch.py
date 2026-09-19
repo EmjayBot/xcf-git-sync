@@ -185,13 +185,22 @@ def parse_manifest(output: str):
 
 def _place(staging_path: str, dest_dir: Path, slug_base: str,
            taken: set[Path]) -> Path:
-    """Move a staged PNG into its final name (de-duped)."""
+    """Move a staged PNG into its final name.
+
+    Overwrites a same-named file left by a previous run; de-dupes
+    (Hero-2.png, ...) only when two layers collide within one run.
+    """
     dest_dir.mkdir(parents=True, exist_ok=True)
     fpath = dest_dir / (slug_base + ".png")
     counter = 2
-    while fpath.exists() or fpath in taken:
+    while fpath in taken:
         fpath = dest_dir / ("%s-%d.png" % (slug_base, counter))
         counter += 1
+    if fpath.exists() and fpath not in taken:
+        try:
+            fpath.unlink()
+        except OSError:
+            pass
     shutil.move(staging_path, str(fpath))
     taken.add(fpath)
     return fpath
