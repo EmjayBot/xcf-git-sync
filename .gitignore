@@ -10,3 +10,5 @@ venv/
 assets/xcf_layers/
 *.xcf
 !tests/
+config.yaml
+config.local.yaml

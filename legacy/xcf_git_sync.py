@@ -1,6 +1,7 @@
 
 """
 xcf_git_sync.py
+UNSUPPORTED reference prototype - see xcf_git_sync/cli.py for the supported tool.
 Watches XCF files and auto-syncs layers to GitHub.
 
 Usage:
@@ -147,7 +148,7 @@ def git_commit_push(repo_path: Path, files, xcf_path: Path, push=True):
             print(result.stdout, result.stderr)
         return result
 
-    run(["git", "add"] + rel_files)
+    run(["git", "add", "--"] + rel_files)
     status = run(["git", "status", "--porcelain"] + rel_files)
     if not status.stdout.strip():
         print("[git] No changes to commit")

@@ -1,6 +1,8 @@
 
 """
-xcf_git_sync_selective.py - same watcher but with layer filters
+xcf_git_sync_selective.py - UNSUPPORTED reference prototype.
+See xcf_git_sync/cli.py for the supported tool.
+Same watcher but with layer filters
 Allows pulling only certain layers
 
 New args:
@@ -129,7 +131,7 @@ def git_commit_push(repo_path: Path, files, xcf_path: Path, push=True):
         r=subprocess.run(cmd, cwd=repo_path, capture_output=True, text=True)
         if r.returncode!=0: print(r.stdout, r.stderr)
         return r
-    run(["git","add"]+rel_files)
+    run(["git","add","--"]+rel_files)
     status=run(["git","status","--porcelain"]+rel_files)
     if not status.stdout.strip():
         print("[git] No changes")
