@@ -328,3 +328,6 @@ pytest -q
 ```
 
 PRs welcome: GIMP 3 batch export hardening, tests with more XCF fixtures, tray app.
+
+## Credit
+Vibe-crafted, human tested.
